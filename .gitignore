@@ -46,4 +46,9 @@ buildNumber.properties
 
 # OS specific files
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Chronicle Queue files
+queue/
+*.cq4
+*.cq4t 

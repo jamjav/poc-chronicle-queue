@@ -217,4 +217,52 @@ public class QueueService {
 
         return info;
     }
+
+    public Map<String, Object> getHealthInfo() {
+        Map<String, Object> healthInfo = new HashMap<>();
+
+        // Estado general del servicio
+        healthInfo.put("serviceStatus", "UP");
+        healthInfo.put("timestamp", new Date());
+
+        // Información de la cola
+        File queueDir = new File(queuePath);
+        boolean queueExists = queueDir.exists();
+        healthInfo.put("queueExists", queueExists);
+
+        if (queueExists) {
+            // Estado de la cola
+            healthInfo.put("queueStatus", queue != null ? "ACTIVE" : "INACTIVE");
+
+            // Estadísticas de la cola
+            File[] queueFiles = queueDir.listFiles((dir, name) -> name.endsWith(".cq4"));
+            int numberOfQueueFiles = queueFiles != null ? queueFiles.length : 0;
+            healthInfo.put("numberOfQueueFiles", numberOfQueueFiles);
+
+            // Tamaño total de la cola
+            long totalSize = 0;
+            if (queueFiles != null) {
+                for (File file : queueFiles) {
+                    totalSize += file.length();
+                }
+            }
+            healthInfo.put("totalQueueSizeBytes", totalSize);
+
+            // Conteo de registros
+            List<DataRecord> records = readRecords();
+            healthInfo.put("totalRecords", records.size());
+
+            // Conteo por estado
+            Map<String, Long> recordsByState = records.stream()
+                    .collect(Collectors.groupingBy(DataRecord::getState, Collectors.counting()));
+            healthInfo.put("recordsByState", recordsByState);
+
+            // Conteo por tipo de notificación
+            Map<String, Long> recordsByNotificationType = records.stream()
+                    .collect(Collectors.groupingBy(DataRecord::getTypeNotification, Collectors.counting()));
+            healthInfo.put("recordsByNotificationType", recordsByNotificationType);
+        }
+
+        return healthInfo;
+    }
 }

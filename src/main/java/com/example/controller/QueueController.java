@@ -44,4 +44,9 @@ public class QueueController {
     public ResponseEntity<Map<String, Object>> getQueueInfo() {
         return ResponseEntity.ok(queueService.getQueueInfo());
     }
+
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> health() {
+        return ResponseEntity.ok(queueService.getHealthInfo());
+    }
 }
