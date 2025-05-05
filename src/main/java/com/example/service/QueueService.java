@@ -390,7 +390,7 @@ public class QueueService {
         stats.put("totalDataSizeBytes", totalDataSizeBytes);
         stats.put("totalQueueSizeBytes", totalQueueSizeBytes);
         stats.put("maxQueueSizeBytes", maxQueueSizeBytes);
-        stats.put("usagePercentage", usagePercentage);
+        stats.put("usagePercentage", String.format("%.2f%%", usagePercentage));
         stats.put("maxQueueSizeMB", maxQueueSizeBytes / (1024 * 1024));
         stats.put("totalDataSizeMB", totalDataSizeBytes / (1024 * 1024));
         stats.put("totalQueueSizeMB", totalQueueSizeBytes / (1024 * 1024));
