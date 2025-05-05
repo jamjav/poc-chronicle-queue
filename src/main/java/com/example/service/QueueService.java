@@ -414,4 +414,24 @@ public class QueueService {
     public boolean isQueueActive() {
         return queue != null;
     }
+
+    public Map<String, Object> getServiceStatus() {
+        Map<String, Object> serviceStatus = new HashMap<>();
+        serviceStatus.put("serviceStatus", "UP");
+        serviceStatus.put("timestamp", new Date());
+        return serviceStatus;
+    }
+
+    public Map<String, Object> getQueueHealthInfo() {
+        Map<String, Object> queueHealthInfo = new HashMap<>();
+        File queueDir = new File(getQueuePath());
+        boolean queueExists = queueDir.exists();
+        queueHealthInfo.put("queueExists", queueExists);
+
+        if (queueExists) {
+            queueHealthInfo.put("queueStatus", isQueueActive() ? "ACTIVE" : "INACTIVE");
+        }
+
+        return queueHealthInfo;
+    }
 }

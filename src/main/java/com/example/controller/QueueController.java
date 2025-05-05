@@ -5,8 +5,6 @@ import com.example.service.QueueService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.File;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,18 +51,10 @@ public class QueueController {
         Map<String, Object> healthInfo = new HashMap<>();
 
         // Estado general del servicio
-        healthInfo.put("serviceStatus", "UP");
-        healthInfo.put("timestamp", new Date());
+        healthInfo.putAll(queueService.getServiceStatus());
 
         // Información de la cola
-        File queueDir = new File(queueService.getQueuePath());
-        boolean queueExists = queueDir.exists();
-        healthInfo.put("queueExists", queueExists);
-
-        if (queueExists) {
-            // Estado de la cola
-            healthInfo.put("queueStatus", queueService.isQueueActive() ? "ACTIVE" : "INACTIVE");
-        }
+        healthInfo.putAll(queueService.getQueueHealthInfo());
 
         return ResponseEntity.ok(healthInfo);
     }
