@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.openhft.chronicle.queue.ChronicleQueue;
 import net.openhft.chronicle.queue.ExcerptAppender;
 import net.openhft.chronicle.queue.ExcerptTailer;
+import net.openhft.chronicle.queue.impl.single.SingleChronicleQueue;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueueBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import net.openhft.chronicle.queue.RollCycles;
+
 @Slf4j
 @Service
 public class QueueService {
@@ -29,25 +32,38 @@ public class QueueService {
 
     private ChronicleQueue queue;
 
+    private final Object writeLock = new Object();
+
     @PostConstruct
     public void init() {
-        File queueDir = new File(queuePath);
-        if (!queueDir.exists()) {
-            queueDir.mkdirs();
+        try {
+            File queueDir = new File(queuePath);
+            if (!queueDir.exists()) {
+                queueDir.mkdirs();
+            }
+
+            // Configuración más robusta de la cola
+            queue = SingleChronicleQueueBuilder
+                    .binary(queueDir)
+                    .blockSize(64 * 1024 * 1024) // Reducir tamaño del bloque a 64MB
+                    .build();
+
+            log.info("Chronicle Queue initialized at: {}", queuePath);
+        } catch (Exception e) {
+            log.error("Failed to initialize Chronicle Queue", e);
+            throw new RuntimeException("Failed to initialize queue", e);
         }
-
-        queue = SingleChronicleQueueBuilder
-                .binary(queueDir)
-                .build();
-
-        log.info("Chronicle Queue initialized at: {}", queuePath);
     }
 
     @PreDestroy
     public void cleanup() {
         if (queue != null) {
-            queue.close();
-            log.info("Chronicle Queue closed");
+            try {
+                queue.close();
+                log.info("Chronicle Queue closed");
+            } catch (Exception e) {
+                log.error("Error closing queue", e);
+            }
         }
     }
 
@@ -83,22 +99,96 @@ public class QueueService {
     }
 
     public void writeRecord(DataRecord record) {
+        if (queue == null) {
+            log.error("Queue is not initialized");
+            throw new IllegalStateException("Queue is not initialized");
+        }
+
         // Generar UUID único
         record.setUniqueId(UUID.randomUUID().toString());
         // Establecer estado inicial
         record.setStatus("Initialize");
 
-        ExcerptAppender appender = queue.acquireAppender();
-        appender.writeDocument(w -> w.write("record").marshallable(m -> {
-            m.write("id").text(record.getId());
-            m.write("name").text(record.getName());
-            m.write("phone").text(record.getPhone());
-            m.write("email").text(record.getEmail());
-            m.write("state").text(record.getState());
-            m.write("typeNotification").text(record.getTypeNotification());
-            m.write("uniqueId").text(record.getUniqueId());
-            m.write("status").text(record.getStatus());
-        }));
+        try (ChronicleQueue queue = ChronicleQueue.singleBuilder("ruta/del/archivo").build()) {
+            ExcerptAppender appender = queue.createAppender();
+            appender.writeDocument(w -> w.write("record").marshallable(m -> {
+                m.write("id").text(record.getId());
+                m.write("name").text(record.getName());
+                m.write("phone").text(record.getPhone());
+                m.write("email").text(record.getEmail());
+                m.write("state").text(record.getState());
+                m.write("typeNotification").text(record.getTypeNotification());
+                m.write("uniqueId").text(record.getUniqueId());
+                m.write("status").text(record.getStatus());
+            }));
+        } catch (Exception e) {
+            log.error("Failed to write record with ID: {}. Error: {}", record.getId(), e.getMessage(), e);
+        } catch (Throwable t) {
+            log.error("Critical error occurred while writing record with ID: {}. Error: {}", record.getId(), t.getMessage(), t);
+            throw t; // Re-throw the error to ensure it is not silently ignored
+        }
+    }
+
+    public void writeRecords(List<DataRecord> records) {
+        if (queue == null) {
+            log.error("Queue is not initialized");
+            throw new IllegalStateException("Queue is not initialized");
+        }
+
+        synchronized (writeLock) {
+            log.info("Starting write operation for {} records", records.size());
+            ExcerptAppender appender = null;
+            try {
+                appender = queue.createAppender();
+                log.info("Acquired appender for writing records.");
+
+                for (int i = 0; i < records.size(); i++) {
+                    DataRecord record = records.get(i);
+                    log.debug("Preparing to write record {} with ID: {}", i + 1, record.getId());
+
+                    // Validar datos del registro
+                    if (record.getId() == null || record.getName() == null || record.getPhone() == null ||
+                            record.getEmail() == null || record.getState() == null
+                            || record.getTypeNotification() == null) {
+                        log.error("Record {} has null fields and will be skipped: {}", i + 1, record);
+                        continue;
+                    }
+
+                    // Generar UUID único
+                    record.setUniqueId(UUID.randomUUID().toString());
+                    log.debug("Generated unique ID for record: {}", record.getUniqueId());
+
+                    // Establecer estado inicial
+                    record.setStatus("Initialize");
+                    log.debug("Set initial status for record: {}", record.getStatus());
+
+                    try {
+                        appender.writeDocument(w -> w.write("record").marshallable(m -> {
+                            m.write("id").text(record.getId());
+                            m.write("name").text(record.getName());
+                            m.write("phone").text(record.getPhone());
+                            m.write("email").text(record.getEmail());
+                            m.write("state").text(record.getState());
+                            m.write("typeNotification").text(record.getTypeNotification());
+                            m.write("uniqueId").text(record.getUniqueId());
+                            m.write("status").text(record.getStatus());
+                        }));
+                        log.info("Successfully wrote record {} with ID: {}", i + 1, record.getId());
+                    } catch (Exception e) {
+                        log.error("Failed to write record {} with ID: {}", i + 1, record.getId(), e);
+                    } catch (Throwable t) {
+                        log.error("Critical error occurred while writing record {} with ID: {}", i + 1, record.getId(),
+                                t);
+                        throw t; // Re-throw the error to ensure it is not silently ignored
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error during write operation", e);
+                throw new RuntimeException("Failed to write records to queue", e);
+            } finally {
+                log.info("Write operation completed for {} records", records.size());
+            }
+        }
     }
 
     public List<DataRecord> readRecords() {
@@ -174,7 +264,7 @@ public class QueueService {
                 .collect(Collectors.toList());
     }
 
-    public Map<String, Object> getQueueInfo() {
+    public synchronized Map<String, Object> getQueueInfo() {
         Map<String, Object> info = new HashMap<>();
         File queueDir = new File(queuePath);
 
@@ -264,5 +354,50 @@ public class QueueService {
         }
 
         return healthInfo;
+    }
+
+    public Map<String, Object> getQueueStatistics() {
+        Map<String, Object> stats = new HashMap<>();
+
+        if (queue == null) {
+            log.error("Queue is not initialized");
+            stats.put("error", "Queue is not initialized");
+            return stats;
+        }
+
+        List<DataRecord> records = readRecords();
+        int totalRecords = records.size();
+        long totalDataSizeBytes = 0;
+
+        for (DataRecord record : records) {
+            // Estimar el tamaño de los datos del registro
+            totalDataSizeBytes += (record.getId() != null ? record.getId().length() : 0);
+            totalDataSizeBytes += (record.getName() != null ? record.getName().length() : 0);
+            totalDataSizeBytes += (record.getPhone() != null ? record.getPhone().length() : 0);
+            totalDataSizeBytes += (record.getEmail() != null ? record.getEmail().length() : 0);
+            totalDataSizeBytes += (record.getState() != null ? record.getState().length() : 0);
+            totalDataSizeBytes += (record.getTypeNotification() != null ? record.getTypeNotification().length() : 0);
+            totalDataSizeBytes += (record.getUniqueId() != null ? record.getUniqueId().length() : 0);
+            totalDataSizeBytes += (record.getStatus() != null ? record.getStatus().length() : 0);
+        }
+
+        // Ajustar el cálculo del porcentaje de uso
+        long maxQueueSizeBytes = 500 * 1024 * 1024; // Límite de 500 MB
+        long totalQueueSizeBytes = totalDataSizeBytes; // Usar el tamaño real de los datos
+        double usagePercentage = ((double) totalQueueSizeBytes / maxQueueSizeBytes) * 100;
+
+        stats.put("totalRecords", totalRecords);
+        stats.put("totalDataSizeBytes", totalDataSizeBytes);
+        stats.put("totalQueueSizeBytes", totalQueueSizeBytes);
+        stats.put("maxQueueSizeBytes", maxQueueSizeBytes);
+        stats.put("usagePercentage", usagePercentage);
+        stats.put("maxQueueSizeMB", maxQueueSizeBytes / (1024 * 1024));
+        stats.put("totalDataSizeMB", totalDataSizeBytes / (1024 * 1024));
+        stats.put("totalQueueSizeMB", totalQueueSizeBytes / (1024 * 1024));
+        stats.put("status", usagePercentage >= 100 ? "FULL" : "AVAILABLE");
+
+        log.info("Queue statistics: {} records consuming {} bytes, total queue size: {} bytes, usage: {}%",
+                totalRecords, totalDataSizeBytes, totalQueueSizeBytes, usagePercentage);
+        return stats;
     }
 }

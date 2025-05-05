@@ -18,10 +18,16 @@ public class QueueController {
         this.queueService = queueService;
     }
 
-    @PostMapping("/write")
-    public ResponseEntity<String> writeRecord(@RequestBody DataRecord record) {
+    @PostMapping("/write1")
+    public ResponseEntity<String> writeRecords(@RequestBody DataRecord record) {
         queueService.writeRecord(record);
-        return ResponseEntity.ok("Record written successfully");
+        return ResponseEntity.ok("Records written successfully");
+    }
+
+    @PostMapping("/write")
+    public ResponseEntity<String> writeRecords(@RequestBody List<DataRecord> records) {
+        queueService.writeRecords(records);
+        return ResponseEntity.ok("Records written successfully");
     }
 
     @GetMapping("/read")
@@ -48,5 +54,10 @@ public class QueueController {
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
         return ResponseEntity.ok(queueService.getHealthInfo());
+    }
+
+    @GetMapping("/statistics")
+    public ResponseEntity<Map<String, Object>> getQueueStatistics() {
+        return ResponseEntity.ok(queueService.getQueueStatistics());
     }
 }

@@ -43,7 +43,7 @@
         <dependency>
             <groupId>net.openhft</groupId>
             <artifactId>chronicle-queue</artifactId>
-            <version>${chronicle.version}</version>
+            <version>5.27ea5</version>
         </dependency>
 
         <dependency>
@@ -106,4 +106,4 @@
             </plugin>
         </plugins>
     </build>
-</project> 
+</project>
