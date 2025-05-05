@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.openhft.chronicle.queue.ChronicleQueue;
 import net.openhft.chronicle.queue.ExcerptAppender;
 import net.openhft.chronicle.queue.ExcerptTailer;
-import net.openhft.chronicle.queue.impl.single.SingleChronicleQueue;
 import net.openhft.chronicle.queue.impl.single.SingleChronicleQueueBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,8 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
-import net.openhft.chronicle.queue.RollCycles;
 
 @Slf4j
 @Service
@@ -124,7 +121,8 @@ public class QueueService {
         } catch (Exception e) {
             log.error("Failed to write record with ID: {}. Error: {}", record.getId(), e.getMessage(), e);
         } catch (Throwable t) {
-            log.error("Critical error occurred while writing record with ID: {}. Error: {}", record.getId(), t.getMessage(), t);
+            log.error("Critical error occurred while writing record with ID: {}. Error: {}", record.getId(),
+                    t.getMessage(), t);
             throw t; // Re-throw the error to ensure it is not silently ignored
         }
     }
@@ -192,22 +190,28 @@ public class QueueService {
     }
 
     public List<DataRecord> readRecords() {
+        log.info("Reading records from the queue...");
         List<DataRecord> records = new ArrayList<>();
         ExcerptTailer tailer = queue.createTailer();
-        while (tailer.readDocument(w -> w.read("record").marshallable(m -> {
-            DataRecord record = new DataRecord();
-            record.setId(m.read("id").text());
-            record.setName(m.read("name").text());
-            record.setPhone(m.read("phone").text());
-            record.setEmail(m.read("email").text());
-            record.setState(m.read("state").text());
-            record.setTypeNotification(m.read("typeNotification").text());
-            record.setUniqueId(m.read("uniqueId").text());
-            record.setStatus(m.read("status").text());
-            records.add(record);
-        }))) {
-            // Continue reading
+        while (tailer.readDocument(w -> {
+            log.debug("Reading a record from the queue...");
+            w.read("record").marshallable(m -> {
+                DataRecord record = new DataRecord();
+                record.setId(m.read("id").text());
+                record.setName(m.read("name").text());
+                record.setPhone(m.read("phone").text());
+                record.setEmail(m.read("email").text());
+                record.setState(m.read("state").text());
+                record.setTypeNotification(m.read("typeNotification").text());
+                record.setUniqueId(m.read("uniqueId").text());
+                record.setStatus(m.read("status").text());
+                records.add(record);
+                log.debug("Record read: {}", record);
+            });
+        })) {
+            log.debug("Finished reading a document from the queue.");
         }
+        log.info("Finished reading all records. Total records: {}", records.size());
         return records;
     }
 
@@ -387,9 +391,11 @@ public class QueueService {
         double usagePercentage = ((double) totalQueueSizeBytes / maxQueueSizeBytes) * 100;
 
         stats.put("totalRecords", totalRecords);
-        stats.put("totalDataSizeBytes", totalDataSizeBytes);
-        stats.put("totalQueueSizeBytes", totalQueueSizeBytes);
-        stats.put("maxQueueSizeBytes", maxQueueSizeBytes);
+        stats.put("totalQueueSizeMB", totalQueueSizeBytes / (1024 * 1024));
+        stats.put("totalDataSizeMB", totalDataSizeBytes / (1024 * 1024));
+        stats.put("maxQueueSizeMB", maxQueueSizeBytes / (1024 * 1024));
+        stats.remove("totalQueueSizeBytes");
+        stats.remove("totalDataSizeBytes");
         stats.put("usagePercentage", String.format("%.2f%%", usagePercentage));
         stats.put("maxQueueSizeMB", maxQueueSizeBytes / (1024 * 1024));
         stats.put("totalDataSizeMB", totalDataSizeBytes / (1024 * 1024));
@@ -399,5 +405,13 @@ public class QueueService {
         log.info("Queue statistics: {} records consuming {} bytes, total queue size: {} bytes, usage: {}%",
                 totalRecords, totalDataSizeBytes, totalQueueSizeBytes, usagePercentage);
         return stats;
+    }
+
+    public String getQueuePath() {
+        return queuePath;
+    }
+
+    public boolean isQueueActive() {
+        return queue != null;
     }
 }

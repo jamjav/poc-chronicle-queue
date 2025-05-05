@@ -5,6 +5,9 @@ import com.example.service.QueueService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.File;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -16,12 +19,6 @@ public class QueueController {
 
     public QueueController(QueueService queueService) {
         this.queueService = queueService;
-    }
-
-    @PostMapping("/write1")
-    public ResponseEntity<String> writeRecords(@RequestBody DataRecord record) {
-        queueService.writeRecord(record);
-        return ResponseEntity.ok("Records written successfully");
     }
 
     @PostMapping("/write")
@@ -53,7 +50,23 @@ public class QueueController {
 
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
-        return ResponseEntity.ok(queueService.getHealthInfo());
+        Map<String, Object> healthInfo = new HashMap<>();
+
+        // Estado general del servicio
+        healthInfo.put("serviceStatus", "UP");
+        healthInfo.put("timestamp", new Date());
+
+        // Información de la cola
+        File queueDir = new File(queueService.getQueuePath());
+        boolean queueExists = queueDir.exists();
+        healthInfo.put("queueExists", queueExists);
+
+        if (queueExists) {
+            // Estado de la cola
+            healthInfo.put("queueStatus", queueService.isQueueActive() ? "ACTIVE" : "INACTIVE");
+        }
+
+        return ResponseEntity.ok(healthInfo);
     }
 
     @GetMapping("/statistics")
